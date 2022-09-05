@@ -34,12 +34,12 @@ if "%bits%" == "0" goto usage
 
 set ver=0
 REM Revise based on https://techdocs.broadcom.com/us/en/ca-mainframe-software/devops/ca-gen/8-6/technical-requirements/third-party-software-version.html
-if "%2" == "2017" set ver=VS150
-if "%2" == "2019" set ver=VS160
-if "%2" == ""     set ver=VS150
+if "%2" == "2017" (set ver=VS150& set bver=v141)
+if "%2" == "2019" (set ver=VS160& set bver=v142)
+if "%2" == ""     (set ver=VS150& set bver=v141)
 if "%ver%" == "0" goto usage
 
-ENDLOCAL & set compiler_ver=%ver%& set vsbits=%bits%
+ENDLOCAL & set compiler_ver=%ver%& set vsbits=%bits%& set vsbtver=%bver%
 set compiler_num=%compiler_ver:~2,3%
 
 REM *******************************************************
@@ -50,30 +50,41 @@ REM *******************************************************
 
 call "%GEN86%Gen\vssetup.bat" %2
 
-set batchFile=VsDevCmd.bat
-
-REM
-REM Determine if selected VS version is installed.
-REM
-
+REM ## VS Setup will set COMNTOOLS if found as well as VCINSTALLDIR
 if not defined %compiler_ver%COMNTOOLS (
   goto error_no_vscomntools	
-) else (
-  call "%%%compiler_ver%COMNTOOLS%%%batchFile%"
 )
-
-set PATH=%GEN86%Gen;%PATH%
-@echo.
-@echo %GEN86%Gen added to front of PATH
-
-if %vsbits% == 32 goto end
-
 if "%VCINSTALLDIR%" == "" goto error_no_vcinstalldir
-call "%VCINSTALLDIR%Auxiliary\Build\vcvarsall.bat" x64
 
-set PATH=%GEN86%Gen\amd64;%PATH%
+REM ## Check if we're using a downlevel compile chain
+set tfile=Microsoft.VCToolsVersion.%vsbtver%.default.txt
+set Version=
+if exist "%VCINSTALLDIR%Auxiliary\Build\%tfile%" (
+  set /p Version=<"%VCINSTALLDIR%Auxiliary\Build\%tfile%"
+)
+REM ## Default to 32 bit
+set batchFile=vcvars32.bat
+set gsuffix=
+if %vsbits% == 64 (
+  REM ## But configure for 64 bit as needed
+  set batchFile=vcvars64.bat
+  set gsuffix=\amd64
+)
+REM ## If the Version isn't set, we're using a perfectly matched compile chain
+if "%Version%" == "" (
+  call "%VCINSTALLDIR%Auxiliary\Build\%batchFile%"
+) else (
+  call "%VCINSTALLDIR%Auxiliary\Build\%batchFile%" -vcvars_ver=%Version%
+)
+REM ## Configure the Gen path
+set PATH=%GEN86%Gen%gsuffix%;%PATH%
 @echo.
-@echo %GEN86%Gen\amd64 added to front of PATH
+@echo %GEN86%Gen%gsuffix% added to front of PATH
+REM ## Unset variables that are no longer required
+set tfile=
+set Version=
+set batchFile=
+set gsuffix=
 goto end
 
 :error_no_vscomntools

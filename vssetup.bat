@@ -16,9 +16,10 @@ REM ##  MODIFICATIONS:
 REM ##     RAL  07/11/2018  Initial creation
 REM ##     RAL  08/13/2018  Add check for VS 2017 on 32bit systems
 REM ##     RAL  05/28/2020  Add support for VS 2019
+REM ##  RespSys 05/09/2022  Add support for mixed VS environments
 REM ##------------------------------------------------------------------
 
-SETLOCAL
+SETLOCAL enabledelayedexpansion
 
 if not "%1" == "" set vsver=%1
 if "%1" == "" set vsver=2017
@@ -44,6 +45,13 @@ REM ##
 %vswhere% -products * -property installationPath > %TEMP%\vswhere.tmp
 
 REM ##
+REM ## Set Visual Studio version based on Visual Studio Product
+REM ## This enables toolchain lookups as well
+REM ##
+if "%vsver%" == "2017" (set ver=VS150& set bver=v141)
+if "%vsver%" == "2019" (set ver=VS160& set bver=v142)
+
+REM ##
 REM ## collect Visual Studio location based on supplied Visual Studio version
 REM ##
 set vslocation="location not found"
@@ -51,13 +59,24 @@ for /f "tokens=*" %%i in (%TEMP%\vswhere.tmp) do call :process_location "%%i"
 
 del %TEMP%\vswhere.tmp > NUL
 
+REM ## If the location is not found, there is no perfect match.  Fallback
+REM ## to looking if the toolchain of interest is found in the latest available IDE install
+if %vslocation% == "location not found%" (
+  REM ## Look for the latest Visual Studio with the C/C++ tools
+  for /f "usebackq tokens=*" %%i in (`!vswhere! -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+    set InstallDir=%%i
+  )
+  REM ## If there's a backlevel tool installed, it will have a TXT file
+  set tfile="Microsoft.VCToolsVersion.!bver!.default.txt"
+  if exist "!InstallDir!\VC\Auxiliary\Build\!tfile!" (
+    set /p Version=<"!InstallDir!\VC\Auxiliary\Build\!tfile!"
+    rem Trim it
+    set Version=!Version: =!
+    set vslocation="!InstallDir!"
+  )
+)
+REM ## There's still no compatible tool on the latest IDE
 if %vslocation% == "location not found%" goto vsver_not_found
-
-REM ##
-REM ## Set Visual Studio version based on Visual Studio Product
-REM ##
-if "%vsver%" == "2017" set ver=VS150
-if "%vsver%" == "2019" set ver=VS160
 
 ENDLOCAL & set cagen_vs_ver=%ver%& set VSINSTALLDIR=%vslocation:"=%\& set VCINSTALLDIR=%vslocation:"=%\VC\
 
